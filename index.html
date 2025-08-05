@@ -545,7 +545,7 @@
 
     // --- Raycaster for Interactive Blocks ---
     const raycaster = new THREE.Raycaster();
-    const targetDistance = 10;
+    const targetDistance = 20;
     function getTargetInteractiveBlock() {
       const interactiveMeshes = objects.filter(o => o.type==="interactive").map(o => o.mesh);
       raycaster.set(camera.position, camera.getWorldDirection(new THREE.Vector3()));
