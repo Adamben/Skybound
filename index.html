@@ -251,7 +251,7 @@
   </div>
 
   <!-- In-game UI elements -->
-  <div id="inventory">Blocks: 0 | Spheres: 0 | Ammo: 10</div>
+  <div id="inventory">Blocks: 0 | Spheres: 0 | Ammo: 10 | Collectables: 0</div>
   <div id="debug"></div>
   <div id="crosshair"></div>
   <div id="blockInfo"></div>
@@ -391,10 +391,10 @@
     const finishOverlay = document.getElementById("finishOverlay");
 
     // --- Inventory System ---
-    const inventory = { blocks: 0, spheres: 0, ammo: 10 };
+    const inventory = { blocks: 0, spheres: 0, ammo: 10, collectables: 0 };
     let collectedBlocks = 0;
     function updateInventoryDisplay() {
-      inventoryEl.textContent = `Blocks: ${inventory.blocks} | Spheres: ${inventory.spheres} | Ammo: ${inventory.ammo} | Collected: ${collectedBlocks}`;
+      inventoryEl.textContent = `Blocks: ${inventory.blocks} | Spheres: ${inventory.spheres} | Ammo: ${inventory.ammo} | Collected: ${collectedBlocks} | Collectables: ${inventory.collectables}`;
     }
     function showDebugMessage(message) {
       debugEl.textContent = message;
@@ -589,18 +589,44 @@
 
     // --- Lava Block Effect ---
     function checkLavaCollision() {
-      objects.forEach(obj => {
+      const playerPos = playerBody.position;
+      for (let i = objects.length - 1; i >= 0; i--) {
+        const obj = objects[i];
         if (obj.type === "lava") {
-          const dx = playerBody.position.x - obj.mesh.position.x;
-          const dy = playerBody.position.y - obj.mesh.position.y;
-          const dz = playerBody.position.z - obj.mesh.position.z;
-          if (Math.sqrt(dx*dx + dy*dy + dz*dz) < BLOCK_SIZE) {
-            resetLevel();
+          const blockPos = obj.body.position;
+          if (playerPos.distanceTo(blockPos) < BLOCK_SIZE) {
+            // Reset player
+            playerBody.position.set(0, 30, 0);
+            playerBody.velocity.set(0, 0, 0);
             showDebugMessage("Reset by lava!");
             playSound('lavaSound');
+            break;
           }
         }
-      });
+      }
+    }
+
+    function checkCollectableCollision() {
+      const playerPos = playerBody.position;
+      for (let i = objects.length - 1; i >= 0; i--) {
+        const obj = objects[i];
+        if (obj.type === "collectable") {
+          const blockPos = obj.body.position;
+          if (playerPos.distanceTo(blockPos) < BLOCK_SIZE * 1.5) {
+            // Remove the block
+            scene.remove(obj.mesh);
+            world.remove(obj.body);
+            objects.splice(i, 1);
+
+            // Update inventory
+            inventory.collectables = (inventory.collectables || 0) + 1;
+            updateInventoryDisplay();
+
+            // Play sound
+            playSound('collectSound');
+          }
+        }
+      }
     }
 
     // --- Checkpoint Collision ---
@@ -918,6 +944,7 @@
         else if (blockDef[0] === 'f') { blockType = "finish"; blockDef = blockDef.substring(1); }
         else if (blockDef[0] === 'I') { blockType = "ice"; blockDef = blockDef.substring(1); }
         else if (blockDef[0] === 'S') { blockType = "stick"; blockDef = blockDef.substring(1); }
+        else if (blockDef[0] === 'o') { blockType = "collectable"; blockDef = blockDef.substring(1); }
         else if (blockDef[0] === 'C') { blockType = "conveyor"; blockDef = blockDef.substring(1); }
         // ... existing code ...
         const coords = blockDef.split(",").map(Number);
@@ -951,6 +978,7 @@
         else if (blockType === "finish") { color = 0xFFD700; }
         else if (blockType === "ice") { color = 0x99e6ff; }
         else if (blockType === "stick") { color = 0xffffff; }
+        else if (blockType === "collectable") { color = 0x00ff00; }
         // --- COLORS FOR NEW BLOCKS ---
         else if (blockType === "magnet") { color = 0x8888ff; }
         else if (blockType === "repulsor") { color = 0x00ffff; }
@@ -1353,6 +1381,7 @@
       }
       checkSandActivation();
       checkLavaCollision();
+      checkCollectableCollision();
       checkCheckpointCollision();
       checkBoostCollision();
       checkConveyorBeltEffects();
