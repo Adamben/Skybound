@@ -384,17 +384,30 @@
       <h2>Shop</h2>
       <p>Your ByteCoins: <span id="shopByteCoinBalance">0</span></p>
       <div class="shop-item">
-        <span>+10 Ammo</span>
-        <span>Price: 5 ByteCoins</span>
-        <button onclick="buyItem('ammo', 10, 5)">Buy</button>
+        <div>
+          <div>+10 Ammo</div>
+          <div>Price: 2 ByteCoins ($100)</div>
+        </div>
+        <button onclick="buyItem('ammo', 10, 2)">Buy</button>
       </div>
-      <button onclick="hideShop()">Close</button>
+      <div class="shop-item">
+        <div>
+          <div>+5m Ammo Range</div>
+          <div>Current Range: <span id="currentAmmoRange">10</span>m</div>
+          <div>Price: <span id="ammoRangeUpgradeCost">100</span> ByteCoins ($<span id="ammoRangeUpgradeCostDollars">5000</span>)</div>
+        </div>
+        <button onclick="upgradeAmmoRange()">Upgrade</button>
+      </div>
+      <button onclick="hideShop()" class="close-btn">Close Shop</button>
     </div>
   </div>
 
   <!-- Floating text for level start -->
   <div id="levelStartText" style="position:absolute; left:50%; top:30%; transform:translate(-50%,0); color:#fff; font-size:2em; font-family:sans-serif; z-index:1000; display:none; pointer-events:none; text-shadow:0 2px 8px #000;">Level Start</div>
 
+  <!-- Load Chart.js for stock charts -->
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  
   <!-- Load Three.js and Cannon.js -->
   <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/three@0.128/examples/js/controls/PointerLockControls.js"></script>
@@ -527,10 +540,18 @@
     const finishOverlay = document.getElementById("finishOverlay");
 
     // --- Inventory System ---
-    const inventory = { blocks: 0, spheres: 0, ammo: 10, byteCoins: 0, portfolio: {} };
+    const inventory = { 
+      blocks: 0, 
+      spheres: 0, 
+      ammo: 10, 
+      byteCoins: 10,  // Starting with $500 worth of ByteCoins (10 * $50)
+      portfolio: {},
+      ammoRange: 10,  // Starting ammo range
+      ammoRangeUpgradeCost: 100  // Cost to upgrade ammo range (in ByteCoins)
+    };
     let collectedBlocks = 0;
     function updateInventoryDisplay() {
-      inventoryEl.textContent = `Blocks: ${inventory.blocks} | Spheres: ${inventory.spheres} | Ammo: ${inventory.ammo} | ByteCoins: ${inventory.byteCoins}`;
+      inventoryEl.textContent = `Blocks: ${inventory.blocks} | Spheres: ${inventory.spheres} | Ammo: ${inventory.ammo} | Range: ${inventory.ammoRange}m | ByteCoins: $${inventory.byteCoins * 50}`;
     }
     function showDebugMessage(message) {
       debugEl.textContent = message;
@@ -1483,7 +1504,7 @@
     function hideShop() { document.getElementById('shopOverlay').style.display = 'none'; }
 
     function updateMarketDisplay() {
-      document.getElementById('marketByteCoinBalance').textContent = inventory.byteCoins;
+      document.getElementById('marketByteCoinBalance').textContent = `${inventory.byteCoins} ($${inventory.byteCoins * 50})`;
       const portfolioEl = document.getElementById('portfolioDisplay');
       portfolioEl.innerHTML = '';
       
@@ -1512,7 +1533,10 @@
     }
 
     function updateShopDisplay() {
-      document.getElementById('shopByteCoinBalance').textContent = inventory.byteCoins;
+      document.getElementById('shopByteCoinBalance').textContent = `${inventory.byteCoins} ($${inventory.byteCoins * 50})`;
+      document.getElementById('currentAmmoRange').textContent = inventory.ammoRange;
+      document.getElementById('ammoRangeUpgradeCost').textContent = inventory.ammoRangeUpgradeCost;
+      document.getElementById('ammoRangeUpgradeCostDollars').textContent = inventory.ammoRangeUpgradeCost * 50;
     }
 
     async function getStockPrice() {
@@ -1542,7 +1566,7 @@
         
         document.getElementById('stockPrice').innerHTML = `
           <div>${profile.name || symbol} (${symbol})</div>
-          <div>Price: $${price}</div>
+          <div>Price: $${price.toFixed(2)} (${(price/50).toFixed(2)} ByteCoins)</div>
           <div style="color:${changeColor}">${change}%</div>
           <button onclick="showStockChart('${symbol}')">View Chart</button>
         `;
@@ -1571,8 +1595,13 @@
           throw new Error('Invalid symbol');
         }
         
-        const price = quote.c;
-        const totalCost = price * quantity;
+        const price = quote.c; // Price in dollars
+        const priceInByteCoins = price / 50; // Convert to ByteCoins (1 ByteCoin = $50)
+        const totalCost = priceInByteCoins * quantity;
+        
+        console.log(`Buying ${quantity} ${symbol} at $${price} each (${priceInByteCoins} ByteCoins)`);
+        console.log(`Total cost: $${(price * quantity).toFixed(2)} (${totalCost.toFixed(2)} ByteCoins)`);
+        console.log(`Current ByteCoins: ${inventory.byteCoins}`);
 
         if (inventory.byteCoins >= totalCost) {
           inventory.byteCoins -= totalCost;
@@ -1608,8 +1637,13 @@
           throw new Error('Invalid symbol');
         }
         
-        const price = quote.c;
-        const totalValue = price * quantity;
+        const price = quote.c; // Price in dollars
+        const priceInByteCoins = price / 50; // Convert to ByteCoins (1 ByteCoin = $50)
+        const totalValue = priceInByteCoins * quantity;
+        
+        console.log(`Selling ${quantity} ${symbol} at $${price} each (${priceInByteCoins} ByteCoins)`);
+        console.log(`Total value: $${(price * quantity).toFixed(2)} (${totalValue.toFixed(2)} ByteCoins)`);
+        console.log(`Current ByteCoins before: ${inventory.byteCoins}`);
 
         inventory.byteCoins += totalValue;
         inventory.portfolio[symbol] -= quantity;
@@ -1651,10 +1685,28 @@
           const dates = data.t.map(timestamp => new Date(timestamp * 1000).toLocaleDateString());
           const prices = data.c;
           
+          // Create container for the chart if it doesn't exist
+          let chartContainer = document.getElementById(`chart-container-${symbol}`);
+          if (!chartContainer) {
+            chartContainer = document.createElement('div');
+            chartContainer.className = 'chart-container';
+            chartContainer.id = `chart-container-${symbol}`;
+            chartContainer.innerHTML = `
+              <h3>${symbol} Price History (30 Days)</h3>
+              <div style="position: relative; height:300px; width:100%">
+                <canvas id="chart-${symbol}"></canvas>
+              </div>
+            `;
+            document.getElementById('stockCharts').appendChild(chartContainer);
+          }
+          
           // Create or update chart
-          const ctx = document.createElement('canvas');
-          ctx.id = `chart-${symbol}`;
-          document.getElementById('stockCharts').appendChild(ctx);
+          const ctx = document.getElementById(`chart-${symbol}`).getContext('2d');
+          
+          // Destroy existing chart if it exists
+          if (stockCharts[symbol]) {
+            stockCharts[symbol].destroy();
+          }
           
           stockCharts[symbol] = new Chart(ctx, {
             type: 'line',
@@ -1664,21 +1716,49 @@
                 label: `${symbol} Price`,
                 data: prices,
                 borderColor: '#4CAF50',
+                backgroundColor: 'rgba(76, 175, 80, 0.1)',
+                borderWidth: 2,
+                pointRadius: 2,
+                fill: true,
                 tension: 0.1
               }]
             },
             options: {
               responsive: true,
+              maintainAspectRatio: false,
               plugins: {
-                legend: { display: true },
-                title: { display: true, text: `${symbol} 30-Day Price History` }
+                legend: { 
+                  display: true,
+                  position: 'top'
+                },
+                title: { 
+                  display: true, 
+                  text: `${symbol} 30-Day Price History`,
+                  font: { size: 16 }
+                },
+                tooltip: {
+                  mode: 'index',
+                  intersect: false
+                }
               },
               scales: {
-                x: { display: false },
-                y: { beginAtZero: false }
+                x: { 
+                  display: true,
+                  grid: { display: false },
+                  ticks: {
+                    maxRotation: 45,
+                    minRotation: 45
+                  }
+                },
+                y: { 
+                  beginAtZero: false,
+                  grid: { color: 'rgba(255,255,255,0.1)' }
+                }
               }
             }
           });
+          
+          return chartContainer;
         }
       } catch (error) {
         console.error('Error loading chart:', error);
@@ -1743,12 +1823,28 @@
         inventory.byteCoins -= price;
         if (item === 'ammo') {
           inventory.ammo += amount;
-          showDebugMessage(`+${amount} Ammo purchased!`);
+          showDebugMessage(`+${amount} Ammo purchased for $${price * 50}!`);
         }
         updateInventoryDisplay();
         updateShopDisplay();
       } else {
-        alert('Not enough ByteCoins!');
+        alert(`You need $${price * 50} (${price} ByteCoins) for this purchase!`);
+      }
+    }
+    
+    function upgradeAmmoRange() {
+      if (inventory.byteCoins >= inventory.ammoRangeUpgradeCost) {
+        inventory.byteCoins -= inventory.ammoRangeUpgradeCost;
+        inventory.ammoRange += 5; // Increase range by 5m
+        const newCost = Math.floor(inventory.ammoRangeUpgradeCost * 1.5); // Increase cost by 50%
+        const costIncrease = newCost - inventory.ammoRangeUpgradeCost;
+        inventory.ammoRangeUpgradeCost = newCost;
+        
+        showDebugMessage(`Ammo range increased to ${inventory.ammoRange}m!`);
+        updateInventoryDisplay();
+        updateShopDisplay();
+      } else {
+        alert(`You need $${inventory.ammoRangeUpgradeCost * 50} (${inventory.ammoRangeUpgradeCost} ByteCoins) to upgrade your ammo range!`);
       }
     }
 
