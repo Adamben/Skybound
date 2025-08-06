@@ -752,8 +752,12 @@
         if (obj.type === "lava") {
           const blockPos = obj.body.position;
           if (playerPos.distanceTo(blockPos) < BLOCK_SIZE) {
-            // Reset player
-            playerBody.position.set(0, 30, 0);
+            // Reset player at last checkpoint or start position
+            if (checkpointPosition) {
+              playerBody.position.copy(checkpointPosition.clone().add(new THREE.Vector3(0, 2, 0))); // slightly above checkpoint
+            } else {
+              playerBody.position.set(0, 2, 0);
+            }
             playerBody.velocity.set(0, 0, 0);
             showDebugMessage("Reset by lava!");
             playSound('lavaSound');
