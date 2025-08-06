@@ -55,6 +55,93 @@
       font-size: 18px;
       padding: 8px 16px;
     }
+    /* Stock Market and Shop Overlays */
+    #stockMarketOverlay, #shopOverlay {
+      display: none;
+      position: absolute;
+      top: 0; left: 0; width: 100%; height: 100%;
+      background: rgba(0,0,0,0.9);
+      color: #fff;
+      z-index: 500;
+      align-items: center;
+      justify-content: center;
+      flex-direction: column;
+      font-family: sans-serif;
+    }
+    .overlay-content {
+      background: #222;
+      padding: 30px;
+      border-radius: 10px;
+      text-align: center;
+      width: 80%;
+      max-width: 500px;
+    }
+    .overlay-content input {
+      padding: 10px;
+      margin: 10px 0;
+      width: calc(100% - 22px);
+    }
+    .shop-item {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 10px;
+      margin: 5px 0;
+      background: rgba(255,255,255,0.1);
+      border-radius: 5px;
+    }
+    
+    /* Stock Market Styles */
+    .stock-search {
+      display: flex;
+      gap: 10px;
+      margin: 15px 0;
+    }
+    
+    .stock-actions {
+      display: flex;
+      gap: 10px;
+      margin: 15px 0;
+    }
+    
+    .stock-quote {
+      background: rgba(0,0,0,0.3);
+      padding: 15px;
+      border-radius: 5px;
+      margin: 10px 0;
+      min-height: 60px;
+    }
+    
+    .buy-btn {
+      background: #4CAF50 !important;
+    }
+    
+    .sell-btn {
+      background: #f44336 !important;
+    }
+    
+    .chart-container {
+      background: rgba(0,0,0,0.3);
+      padding: 15px;
+      border-radius: 5px;
+      margin: 10px 0;
+      display: none;
+    }
+    
+    .portfolio-display {
+      margin: 20px 0;
+    }
+    
+    .stock-item {
+      background: rgba(255,255,255,0.1);
+      padding: 10px;
+      margin: 5px 0;
+      border-radius: 5px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
     /* Settings Overlay */
     #settingsOverlay {
       display: none;
@@ -214,6 +301,8 @@
   <button onclick="startGame()">Start Game</button>
   <button onclick="showCustomLevelInput()">Load Custom Level</button>
   <button onclick="showLevelHub()">Level Hub</button>
+  <button onclick="showStockMarket()">Stock Market</button>
+  <button onclick="showShop()">Shop</button>
   <!-- Button to open the provided blob URL -->
   <button onclick="window.open('sites.google.com/my.sduhsd.net/skybound-odyssey/editor', '_blank')">Open Level editor</button>
   <div id="customLevelInput" style="display:none; margin-top:10px;">
@@ -256,6 +345,53 @@
   <div id="crosshair"></div>
   <div id="blockInfo"></div>
   <button id="saveButton" onclick="saveGame()">Save Game</button>
+  <!-- Stock Market Overlay -->
+  <div id="stockMarketOverlay">
+    <div class="overlay-content">
+      <h2>Stock Market</h2>
+      <p>Your ByteCoins: <span id="marketByteCoinBalance">0</span></p>
+      
+      <div class="stock-search">
+        <input type="text" id="stockSymbol" placeholder="Enter Stock Symbol (e.g., AAPL)">
+        <button onclick="getStockPrice()">Get Quote</button>
+      </div>
+      
+      <div id="stockPrice" class="stock-quote">
+        Search for a stock to see its price
+      </div>
+      
+      <div class="stock-actions">
+        <input type="number" id="stockQuantity" placeholder="Quantity" min="1" value="1">
+        <button onclick="buyStock()" class="buy-btn">Buy</button>
+        <button onclick="sellStock()" class="sell-btn">Sell</button>
+      </div>
+      
+      <div id="stockCharts" class="stock-charts">
+        <!-- Charts will be added here dynamically -->
+      </div>
+      
+      <div id="portfolioDisplay" class="portfolio-display">
+        <!-- Portfolio will be displayed here -->
+      </div>
+      
+      <button onclick="hideStockMarket()" class="close-btn">Close Market</button>
+    </div>
+  </div>
+
+  <!-- Shop Overlay -->
+  <div id="shopOverlay">
+    <div class="overlay-content">
+      <h2>Shop</h2>
+      <p>Your ByteCoins: <span id="shopByteCoinBalance">0</span></p>
+      <div class="shop-item">
+        <span>+10 Ammo</span>
+        <span>Price: 5 ByteCoins</span>
+        <button onclick="buyItem('ammo', 10, 5)">Buy</button>
+      </div>
+      <button onclick="hideShop()">Close</button>
+    </div>
+  </div>
+
   <!-- Floating text for level start -->
   <div id="levelStartText" style="position:absolute; left:50%; top:30%; transform:translate(-50%,0); color:#fff; font-size:2em; font-family:sans-serif; z-index:1000; display:none; pointer-events:none; text-shadow:0 2px 8px #000;">Level Start</div>
 
@@ -391,10 +527,10 @@
     const finishOverlay = document.getElementById("finishOverlay");
 
     // --- Inventory System ---
-    const inventory = { blocks: 0, spheres: 0, ammo: 10, collectables: 0 };
+    const inventory = { blocks: 0, spheres: 0, ammo: 10, byteCoins: 0, portfolio: {} };
     let collectedBlocks = 0;
     function updateInventoryDisplay() {
-      inventoryEl.textContent = `Blocks: ${inventory.blocks} | Spheres: ${inventory.spheres} | Ammo: ${inventory.ammo} | Collected: ${collectedBlocks} | Collectables: ${inventory.collectables}`;
+      inventoryEl.textContent = `Blocks: ${inventory.blocks} | Spheres: ${inventory.spheres} | Ammo: ${inventory.ammo} | ByteCoins: ${inventory.byteCoins}`;
     }
     function showDebugMessage(message) {
       debugEl.textContent = message;
@@ -606,23 +742,19 @@
       }
     }
 
-    function checkCollectableCollision() {
+        function checkCollectableCollision() {
       const playerPos = playerBody.position;
       for (let i = objects.length - 1; i >= 0; i--) {
         const obj = objects[i];
         if (obj.type === "collectable") {
           const blockPos = obj.body.position;
           if (playerPos.distanceTo(blockPos) < BLOCK_SIZE * 1.5) {
-            // Remove the block
             scene.remove(obj.mesh);
             world.remove(obj.body);
             objects.splice(i, 1);
-
-            // Update inventory
-            inventory.collectables = (inventory.collectables || 0) + 1;
+            inventory.byteCoins++;
             updateInventoryDisplay();
-
-            // Play sound
+            showDebugMessage("+1 ByteCoin");
             playSound('collectSound');
           }
         }
@@ -978,7 +1110,21 @@
         else if (blockType === "finish") { color = 0xFFD700; }
         else if (blockType === "ice") { color = 0x99e6ff; }
         else if (blockType === "stick") { color = 0xffffff; }
-        else if (blockType === "collectable") { color = 0x00ff00; }
+        else if (blockType === "collectable") {
+          const geometry = new THREE.CylinderGeometry(size / 2, size / 2, size / 10, 16);
+          const material = new THREE.MeshPhongMaterial({ color: 0xFFD700 });
+          const mesh = new THREE.Mesh(geometry, material);
+          mesh.rotation.x = Math.PI / 2;
+          mesh.position.set(worldX, worldY + size / 2, worldZ);
+          scene.add(mesh);
+
+          const shape = new CANNON.Box(new CANNON.Vec3(size / 2, size / 2, size / 10));
+          const body = new CANNON.Body({ mass: 0, shape: shape });
+          body.position.set(mesh.position.x, mesh.position.y, mesh.position.z);
+          world.addBody(body);
+          objects.push({ mesh, body, type: blockType, activated: false });
+          return;
+        }
         // --- COLORS FOR NEW BLOCKS ---
         else if (blockType === "magnet") { color = 0x8888ff; }
         else if (blockType === "repulsor") { color = 0x00ffff; }
@@ -1324,6 +1470,285 @@
           playStepSound();
           lastStepTime = now;
         }
+      }
+    }
+
+    // --- Shop and Stock Market Functions ---
+    const finnhubApiKey = 'd29a0qhr01qhoenarmr0d29a0qhr01qhoenarmrg'; // Finnhub API key
+    const stockCharts = {}; // Store chart instances
+
+    function showStockMarket() { document.getElementById('stockMarketOverlay').style.display = 'flex'; updateMarketDisplay(); }
+    function hideStockMarket() { document.getElementById('stockMarketOverlay').style.display = 'none'; }
+    function showShop() { document.getElementById('shopOverlay').style.display = 'flex'; updateShopDisplay(); }
+    function hideShop() { document.getElementById('shopOverlay').style.display = 'none'; }
+
+    function updateMarketDisplay() {
+      document.getElementById('marketByteCoinBalance').textContent = inventory.byteCoins;
+      const portfolioEl = document.getElementById('portfolioDisplay');
+      portfolioEl.innerHTML = '';
+      
+      // Add canvas for chart
+      portfolioEl.innerHTML += '<h4>Your Portfolio</h4><canvas id="portfolioChart" width="400" height="200"></canvas>';
+      
+      // Create portfolio list with chart buttons
+      for (const symbol in inventory.portfolio) {
+        if (inventory.portfolio[symbol] > 0) {
+          const stockItem = document.createElement('div');
+          stockItem.className = 'stock-item';
+          stockItem.innerHTML = `
+            <div>
+              ${symbol}: ${inventory.portfolio[symbol]} shares
+              <button onclick="showStockChart('${symbol}')">View Chart</button>
+            </div>
+          `;
+          portfolioEl.appendChild(stockItem);
+        }
+      }
+      
+      // Initialize chart if we have stocks
+      if (Object.keys(inventory.portfolio).length > 0) {
+        updatePortfolioChart();
+      }
+    }
+
+    function updateShopDisplay() {
+      document.getElementById('shopByteCoinBalance').textContent = inventory.byteCoins;
+    }
+
+    async function getStockPrice() {
+      const symbol = document.getElementById('stockSymbol').value.toUpperCase();
+      if (!symbol) return;
+      
+      const quoteUrl = `https://finnhub.io/api/v1/quote?symbol=${symbol}&token=${finnhubApiKey}`;
+      const profileUrl = `https://finnhub.io/api/v1/stock/profile2?symbol=${symbol}&token=${finnhubApiKey}`;
+      
+      try {
+        // Get both quote and company info
+        const [quoteRes, profileRes] = await Promise.all([
+          fetch(quoteUrl),
+          fetch(profileUrl)
+        ]);
+        
+        const quote = await quoteRes.json();
+        const profile = await profileRes.json();
+        
+        if (quote.d === null) {
+          throw new Error('Invalid symbol');
+        }
+        
+        const price = quote.c;
+        const change = quote.dp ? quote.dp.toFixed(2) : 0;
+        const changeColor = change >= 0 ? '#4CAF50' : '#f44336';
+        
+        document.getElementById('stockPrice').innerHTML = `
+          <div>${profile.name || symbol} (${symbol})</div>
+          <div>Price: $${price}</div>
+          <div style="color:${changeColor}">${change}%</div>
+          <button onclick="showStockChart('${symbol}')">View Chart</button>
+        `;
+        
+        // Preload chart data
+        loadStockChart(symbol);
+        
+      } catch (error) {
+        console.error('Error fetching stock data:', error);
+        document.getElementById('stockPrice').textContent = 'Error: ' + (error.message || 'Failed to fetch stock data');
+      }
+    }
+
+    async function buyStock() {
+      const symbol = document.getElementById('stockSymbol').value.toUpperCase();
+      const quantity = parseInt(document.getElementById('stockQuantity').value);
+      if (!symbol || !quantity || quantity <= 0) return;
+
+      try {
+        // Get current price
+        const quoteUrl = `https://finnhub.io/api/v1/quote?symbol=${symbol}&token=${finnhubApiKey}`;
+        const response = await fetch(quoteUrl);
+        const quote = await response.json();
+        
+        if (quote.d === null) {
+          throw new Error('Invalid symbol');
+        }
+        
+        const price = quote.c;
+        const totalCost = price * quantity;
+
+        if (inventory.byteCoins >= totalCost) {
+          inventory.byteCoins -= totalCost;
+          inventory.portfolio[symbol] = (inventory.portfolio[symbol] || 0) + quantity;
+          updateInventoryDisplay();
+          updateMarketDisplay();
+          showDebugMessage(`Bought ${quantity} ${symbol} for $${totalCost.toFixed(2)}`);
+        } else {
+          alert('Not enough ByteCoins!');
+        }
+      } catch (error) {
+        console.error('Error buying stock:', error);
+        alert('Failed to buy stock: ' + (error.message || 'Unknown error'));
+      }
+    }
+
+    async function sellStock() {
+      const symbol = document.getElementById('stockSymbol').value.toUpperCase();
+      const quantity = parseInt(document.getElementById('stockQuantity').value);
+      if (!symbol || !quantity || quantity <= 0) return;
+      if (!inventory.portfolio[symbol] || inventory.portfolio[symbol] < quantity) {
+        alert('You do not own enough shares to sell.');
+        return;
+      }
+
+      try {
+        // Get current price
+        const quoteUrl = `https://finnhub.io/api/v1/quote?symbol=${symbol}&token=${finnhubApiKey}`;
+        const response = await fetch(quoteUrl);
+        const quote = await response.json();
+        
+        if (quote.d === null) {
+          throw new Error('Invalid symbol');
+        }
+        
+        const price = quote.c;
+        const totalValue = price * quantity;
+
+        inventory.byteCoins += totalValue;
+        inventory.portfolio[symbol] -= quantity;
+        
+        // Remove from portfolio if quantity reaches zero
+        if (inventory.portfolio[symbol] <= 0) {
+          delete inventory.portfolio[symbol];
+          // Remove chart if exists
+          if (stockCharts[symbol]) {
+            stockCharts[symbol].destroy();
+            delete stockCharts[symbol];
+          }
+        }
+        
+        updateInventoryDisplay();
+        updateMarketDisplay();
+        showDebugMessage(`Sold ${quantity} ${symbol} for $${totalValue.toFixed(2)}`);
+      } catch (error) {
+        console.error('Error selling stock:', error);
+        alert('Failed to sell stock: ' + (error.message || 'Unknown error'));
+      }
+    }
+
+    // Chart functions
+    async function loadStockChart(symbol) {
+      if (stockCharts[symbol]) return; // Already loaded
+      
+      try {
+        // Get historical data (last 30 days)
+        const to = Math.floor(Date.now() / 1000);
+        const from = to - (30 * 24 * 60 * 60); // 30 days ago
+        const url = `https://finnhub.io/api/v1/stock/candle?symbol=${symbol}&resolution=D&from=${from}&to=${to}&token=${finnhubApiKey}`;
+        
+        const response = await fetch(url);
+        const data = await response.json();
+        
+        if (data.s === 'ok' && data.c && data.c.length > 0) {
+          // Process data for chart
+          const dates = data.t.map(timestamp => new Date(timestamp * 1000).toLocaleDateString());
+          const prices = data.c;
+          
+          // Create or update chart
+          const ctx = document.createElement('canvas');
+          ctx.id = `chart-${symbol}`;
+          document.getElementById('stockCharts').appendChild(ctx);
+          
+          stockCharts[symbol] = new Chart(ctx, {
+            type: 'line',
+            data: {
+              labels: dates,
+              datasets: [{
+                label: `${symbol} Price`,
+                data: prices,
+                borderColor: '#4CAF50',
+                tension: 0.1
+              }]
+            },
+            options: {
+              responsive: true,
+              plugins: {
+                legend: { display: true },
+                title: { display: true, text: `${symbol} 30-Day Price History` }
+              },
+              scales: {
+                x: { display: false },
+                y: { beginAtZero: false }
+              }
+            }
+          });
+        }
+      } catch (error) {
+        console.error('Error loading chart:', error);
+      }
+    }
+    
+    function showStockChart(symbol) {
+      // Hide all charts first
+      document.querySelectorAll('.chart-container').forEach(el => el.style.display = 'none');
+      
+      // Show or create the selected chart
+      let chartContainer = document.getElementById(`chart-container-${symbol}`);
+      if (!chartContainer) {
+        chartContainer = document.createElement('div');
+        chartContainer.className = 'chart-container';
+        chartContainer.id = `chart-container-${symbol}`;
+        chartContainer.innerHTML = `<h3>${symbol} Price History</h3><canvas id="chart-${symbol}"></canvas>`;
+        document.getElementById('stockCharts').appendChild(chartContainer);
+        loadStockChart(symbol);
+      }
+      chartContainer.style.display = 'block';
+    }
+    
+    function updatePortfolioChart() {
+      const ctx = document.getElementById('portfolioChart');
+      if (!ctx) return;
+      
+      const labels = [];
+      const data = [];
+      
+      for (const symbol in inventory.portfolio) {
+        if (inventory.portfolio[symbol] > 0) {
+          labels.push(symbol);
+          data.push(inventory.portfolio[symbol]);
+        }
+      }
+      
+      new Chart(ctx, {
+        type: 'pie',
+        data: {
+          labels: labels,
+          datasets: [{
+            data: data,
+            backgroundColor: [
+              '#4CAF50', '#2196F3', '#FFC107', '#9C27B0',
+              '#FF5722', '#607D8B', '#795548', '#E91E63'
+            ]
+          }]
+        },
+        options: {
+          responsive: true,
+          plugins: {
+            legend: { position: 'right' },
+            title: { display: true, text: 'Your Portfolio Distribution' }
+          }
+        }
+      });
+    }
+    
+    function buyItem(item, amount, price) {
+      if (inventory.byteCoins >= price) {
+        inventory.byteCoins -= price;
+        if (item === 'ammo') {
+          inventory.ammo += amount;
+          showDebugMessage(`+${amount} Ammo purchased!`);
+        }
+        updateInventoryDisplay();
+        updateShopDisplay();
+      } else {
+        alert('Not enough ByteCoins!');
       }
     }
 
