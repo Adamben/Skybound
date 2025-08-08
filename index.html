@@ -1488,18 +1488,52 @@
         }
         else if (blockType === "stick") { color = 0xffffff; }
         else if (blockType === "collectable") {
-          const geometry = new THREE.CylinderGeometry(size / 2, size / 2, size / 10, 16);
-          const material = new THREE.MeshPhongMaterial({ color: 0xFFD700 });
+          // Create a yellow circle that always faces the camera
+          const geometry = new THREE.CircleGeometry(size / 2, 16);
+          const material = new THREE.MeshStandardMaterial({ 
+            color: 0xFFFF00, // Bright yellow
+            side: THREE.DoubleSide, // Visible from both sides
+            metalness: 0.9,
+            roughness: 0.1,
+            emissive: 0x444400,
+            transparent: true,
+            opacity: 0.9
+          });
           const mesh = new THREE.Mesh(geometry, material);
-          mesh.rotation.x = Math.PI / 2;
-          mesh.position.set(worldX, worldY + size / 2, worldZ);
-          scene.add(mesh);
+          mesh.position.set(0, 0, 0); // Position relative to container
+          
+          // Make it face the camera by adding it to a parent that will handle the billboarding
+          const container = new THREE.Object3D();
+          container.position.set(worldX, worldY + size / 2, worldZ);
+          container.add(mesh);
+          container.userData.isCollectable = true; // Mark for billboarding
+          scene.add(container);
+          
+          // Add a point light to make the coin glow slightly
+          const light = new THREE.PointLight(0xffff00, 0.5, size * 2);
+          container.add(light);
 
-          const shape = new CANNON.Box(new CANNON.Vec3(size / 2, size / 2, size / 10));
-          const body = new CANNON.Body({ mass: 0, shape: shape });
-          body.position.set(mesh.position.x, mesh.position.y, mesh.position.z);
+          // Collision shape (slightly smaller than visual)
+          const shape = new CANNON.Sphere(size / 3);
+          const body = new CANNON.Body({ 
+            mass: 0, 
+            shape: shape,
+            position: new CANNON.Vec3(worldX, worldY + size / 2, worldZ)
+          });
           world.addBody(body);
-          objects.push({ mesh, body, type: blockType, activated: false });
+          
+          objects.push({ 
+            mesh: container, 
+            body, 
+            type: blockType, 
+            activated: false,
+            update: function() {
+              // Billboarding - make the mesh face the camera
+              if (camera) {
+                container.lookAt(camera.position);
+              }
+            }
+          });
           return;
         }
         // --- COLORS FOR NEW BLOCKS ---
@@ -2227,8 +2261,14 @@
       objects.forEach(obj => {
         obj.mesh.position.copy(obj.body.position);
         obj.mesh.quaternion.copy(obj.body.quaternion);
-        // Billboarding images always face the camera
-        if (obj.type === 'billboard' && obj.mesh.userData.billboard) {
+        
+        // Billboarding for coins and other billboard objects
+        if ((obj.type === 'collectable' || (obj.mesh.userData && obj.mesh.userData.isCollectable)) && camera) {
+          // Make the coin always face the camera
+          obj.mesh.lookAt(camera.position);
+        }
+        // For other billboard objects
+        else if (obj.type === 'billboard' && obj.mesh.userData.billboard) {
           obj.mesh.lookAt(camera.position);
         }
       });
