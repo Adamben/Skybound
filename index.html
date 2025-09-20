@@ -2,7 +2,9 @@
 <html>
 <head>
   <meta charset="UTF-8">
-  <title>SkyBound Odyssey</title>
+  <title>SkyBound Odyssey - VR Mode</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+  <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/XRControllerModelFactory.js"></script>
   <style>
     body { margin: 0; overflow: hidden; background: #000; }
     canvas { image-rendering: pixelated; }
@@ -374,7 +376,7 @@
   <button onclick="showLevelHub()">Level Hub</button>
   <button onclick="showStockMarket()">Stock Market</button>
   <button onclick="showShop()">Shop</button>
-  <!-- Button to open the provided blob URL -->
+  <button id="vrMenuButton" style="background: linear-gradient(45deg, #4a00e0, #8e2de2); color: white; border: 1px solid #4a00e0;">VR Mode</button>
   <button onclick="window.open('sites.google.com/my.sduhsd.net/skybound-odyssey/editor', '_blank')">Open Level editor</button>
   <div id="customLevelInput" style="display:none; margin-top:10px;">
     <textarea id="customLevelText" rows="3" style="width:100%"></textarea>
@@ -427,12 +429,42 @@
     <button onclick="advanceLevel()">Advance to Next Level Click Enter, Or Go Back With ESC</button>
   </div>
 
+  <!-- Multiplayer Overlay -->
+  <div id="mpOverlay" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,0.85); z-index:800; color:#fff; font-family:sans-serif;">
+    <div style="max-width:520px; margin:60px auto; padding:20px; background:#1b1b1b; border-radius:8px; box-shadow:0 10px 30px rgba(0,0,0,0.5);">
+      <h2>Multiplayer (Peer-to-Peer)</h2>
+      <div style="display:flex; gap:12px; align-items:center; flex-wrap:wrap;">
+        <label style="min-width:120px;">Your ID</label>
+        <input id="mpMyId" placeholder="choose-your-id" style="flex:1; padding:8px;" />
+        <button id="mpStartHost">Start Hosting</button>
+      </div>
+      <div style="display:flex; gap:12px; align-items:center; margin-top:14px; flex-wrap:wrap;">
+        <label style="min-width:120px;">Host ID</label>
+        <input id="mpHostId" placeholder="host-id-to-join" style="flex:1; padding:8px;" />
+        <button id="mpJoin">Connect</button>
+      </div>
+      <hr style="border:none;border-top:1px solid #333; margin:14px 0;"/>
+      <div style="display:flex; gap:12px; align-items:center; flex-wrap:wrap;">
+        <button id="mpEnableMic">Enable Mic</button>
+        <button id="mpToggleMute" disabled>Mute</button>
+        <span id="mpVoiceStatus" style="color:#9f9;">Mic: Off</span>
+      </div>
+      <div id="mpStatus" style="margin-top:16px; color:#9ad; font-size:14px;">Status: Idle</div>
+      <div id="mpPeers" style="margin-top:10px; color:#ccc; font-size:14px;">Peers: none</div>
+      <div style="text-align:right; margin-top:16px;"><button id="mpClose">Close</button></div>
+    </div>
+  </div>
+  <button id="mpOpen" style="position:fixed; top:12px; right:12px; z-index:820;">Multiplayer</button>
+
   <!-- In-game UI elements -->
   <div id="inventory">Blocks: 0 | Spheres: 0 | Ammo: 10 | Collectables: 0</div>
   <div id="debug"></div>
   <div id="crosshair"></div>
   <div id="blockInfo"></div>
   <button id="saveButton" onclick="saveGame()">Save Game</button>
+  <!-- Cinematic Overlays -->
+  <div id="vignette" style="position:fixed;inset:0;pointer-events:none;z-index:5;background:radial-gradient(circle at center, rgba(0,0,0,0) 50%, rgba(0,0,0,0.35) 85%, rgba(0,0,0,0.6) 100%);"></div>
+  <div id="fxFlash" style="position:fixed;inset:0;pointer-events:none;z-index:6;background:#fff;opacity:0;transition:opacity 0.18s ease;"></div>
   <!-- Stock Market Overlay -->
   <div id="stockMarketOverlay">
     <div class="overlay-content">
@@ -491,7 +523,15 @@
   </div>
 
   <!-- Floating text for level start -->
-  <div id="levelStartText" style="position:absolute; left:50%; top:30%; transform:translate(-50%,0); color:#fff; font-size:2em; font-family:sans-serif; z-index:1000; display:none; pointer-events:none; text-shadow:0 2px 8px #000;">Level Start</div>
+  <div id="levelStartText" style="position:fixed; left:50%; top:30%; transform:translate(-50%,0); color:#fff; font-size:2.5em; font-weight:bold; font-family:sans-serif; z-index:1000; display:none; pointer-events:none; text-shadow:0 0 15px rgba(255,255,255,0.7); background:rgba(0,0,0,0.6); padding:15px 30px; border-radius:10px; box-shadow:0 0 20px rgba(0,0,0,0.5);">Level Start</div>
+  <style>
+    @keyframes fadeInOut {
+      0% { opacity: 0; transform: translate(-50%, -20px); }
+      20% { opacity: 1; transform: translate(-50%, 0); }
+      80% { opacity: 1; transform: translate(-50%, 0); }
+      100% { opacity: 0; transform: translate(-50%, -20px); }
+    }
+  </style>
 
   <!-- Load Chart.js for stock charts -->
   <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
@@ -500,6 +540,8 @@
   <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/three@0.128/examples/js/controls/PointerLockControls.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/cannon/build/cannon.min.js"></script>
+  <!-- Load PeerJS for multiplayer -->
+  <script src="https://unpkg.com/peerjs@1.5.2/dist/peerjs.min.js"></script>
   <script>
     // --- Performance and FPS Tracking ---
     let fps = 0;
@@ -549,6 +591,264 @@
         fpsCounter.style.display = isVisible ? 'none' : 'block';
         localStorage.setItem('fpsCounterVisible', !isVisible);
       });
+
+    // ================= Multiplayer (PeerJS) =================
+    const MP = {
+      peer: null,
+      isHost: false,
+      myId: null,
+      hostId: null,
+      conns: new Map(), // id -> DataConnection
+      ghosts: new Map(), // id -> {mesh}
+      lastBroadcast: 0,
+      localStream: null,
+      muted: false,
+      audioEls: new Map(), // id -> HTMLAudioElement
+    };
+
+    function mpLog(msg){ try{ document.getElementById('mpStatus').textContent = 'Status: ' + msg; }catch(_){} }
+    function mpListPeers(){
+      try{
+        const ids = Array.from(MP.conns.keys());
+        document.getElementById('mpPeers').textContent = 'Peers: ' + (ids.length? ids.join(', '): 'none');
+      }catch(_){}
+    }
+
+    function createGhost(id){
+      if (MP.ghosts.has(id)) return MP.ghosts.get(id);
+      const geo = new THREE.SphereGeometry(0.5, 16, 12);
+      const mat = new THREE.MeshPhongMaterial({ color: new THREE.Color().setHSL(Math.random(), 0.8, 0.6), emissive: 0x112244, shininess: 20 });
+      const mesh = new THREE.Mesh(geo, mat);
+      mesh.castShadow = true; mesh.receiveShadow = true;
+      scene.add(mesh);
+      const ghost = { mesh, lastUpdate: performance.now() };
+      MP.ghosts.set(id, ghost);
+      return ghost;
+    }
+
+    function updateGhost(id, state){
+      const g = createGhost(id);
+      const m = g.mesh;
+      m.position.set(state.px, state.py, state.pz);
+      // Optional smoothing can be added; direct set for responsiveness
+      g.lastUpdate = performance.now();
+    }
+
+    function broadcast(data){
+      for (const [id, c] of MP.conns){ try{ c.open && c.send(data); }catch(_){ }}
+    }
+
+    function handleMessage(srcId, data){
+      if (!data || !data.t) return;
+      switch(data.t){
+        case 'state':
+          if (srcId) updateGhost(srcId, data);
+          if (MP.isHost){ // relay to others
+            for (const [id, c] of MP.conns){ if (id!==srcId) { try{ c.send(data); }catch(_){ } } }
+          }
+          break;
+        case 'event':
+          if (data.k==='smash'){
+            try{ triggerShake(0.6, 300); emitShockwaveRing(new THREE.Vector3(data.x, data.y, data.z)); }catch(_){ }
+          }
+          if (data.k==='boost'){
+            try{ triggerShake(0.35, 160); }catch(_){ }
+          }
+          if (MP.isHost){ for (const [id, c] of MP.conns){ if (id!==srcId) { try{ c.send(data); }catch(_){ } } }
+          }
+          break;
+      }
+    }
+
+    function wireConn(conn){
+      MP.conns.set(conn.peer, conn); mpListPeers();
+      conn.on('data', (d)=> handleMessage(conn.peer, d));
+      conn.on('close', ()=>{ MP.conns.delete(conn.peer); mpListPeers(); });
+      conn.on('error', ()=>{ MP.conns.delete(conn.peer); mpListPeers(); });
+      // Try starting a media call to this peer if we have a mic
+      if (MP.localStream){ try{ mpCallPeer(conn.peer); }catch(_){ } }
+    }
+
+    function startHosting(id){
+      if (MP.peer) { try{ MP.peer.destroy(); }catch(_){ } }
+      MP.isHost = true; MP.myId = id; MP.peer = new Peer(id);
+      MP.peer.on('open', ()=> mpLog('Hosting as ' + id));
+      MP.peer.on('connection', (conn)=>{ mpLog('Peer connected: ' + conn.peer); wireConn(conn); });
+      MP.peer.on('call', (call)=>{ // incoming media call
+        try{
+          if (MP.localStream){ call.answer(MP.localStream); }
+          else { call.answer(); }
+          call.on('stream', (remoteStream)=> attachRemoteAudio(call.peer, remoteStream));
+          call.on('close', ()=> detachRemoteAudio(call.peer));
+          call.on('error', ()=> detachRemoteAudio(call.peer));
+        }catch(_){ }
+      });
+      MP.peer.on('error', (e)=> mpLog('Error: ' + (e?.type||e?.message||e)));
+    }
+
+    function joinHost(myId, hostId){
+      if (MP.peer) { try{ MP.peer.destroy(); }catch(_){ } }
+      MP.isHost = false; MP.myId = myId; MP.hostId = hostId; MP.peer = new Peer(myId);
+      MP.peer.on('open', ()=>{
+        mpLog('Connecting to host ' + hostId);
+        const conn = MP.peer.connect(hostId, { reliable: true });
+        conn.on('open', ()=> { wireConn(conn); mpLog('Connected to host'); });
+        conn.on('data', (d)=> handleMessage(conn.peer, d));
+        conn.on('close', ()=>{ MP.conns.delete(conn.peer); mpListPeers(); mpLog('Disconnected'); });
+        conn.on('error', (e)=> mpLog('Conn error: ' + (e?.type||e?.message||e)));
+      });
+      MP.peer.on('connection', (conn)=>{ // if others connect to a client, accept and relay
+        wireConn(conn); mpLog('Peer connected: ' + conn.peer);
+      });
+      MP.peer.on('call', (call)=>{ // incoming media call
+        try{
+          if (MP.localStream){ call.answer(MP.localStream); }
+          else { call.answer(); }
+          call.on('stream', (remoteStream)=> attachRemoteAudio(call.peer, remoteStream));
+          call.on('close', ()=> detachRemoteAudio(call.peer));
+          call.on('error', ()=> detachRemoteAudio(call.peer));
+        }catch(_){ }
+      });
+      MP.peer.on('error', (e)=> mpLog('Error: ' + (e?.type||e?.message||e)));
+    }
+
+    // --- Voice Chat helpers ---
+    async function enableMic(){
+      if (MP.localStream) return MP.localStream;
+      try{
+        const stream = await navigator.mediaDevices.getUserMedia({
+          audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true },
+          video: false
+        });
+        MP.localStream = stream;
+        document.getElementById('mpVoiceStatus').textContent = 'Mic: On';
+        document.getElementById('mpToggleMute').disabled = false;
+        // call all connected peers
+        for (const id of MP.conns.keys()){ try{ mpCallPeer(id); }catch(_){ } }
+        return stream;
+      }catch(err){
+        mpLog('Mic permission denied');
+        console.warn('Mic error', err);
+        return null;
+      }
+    }
+
+    function mpCallPeer(id){
+      if (!MP.peer || !MP.localStream) return;
+      try{
+        const call = MP.peer.call(id, MP.localStream);
+        call.on('stream', (remoteStream)=> attachRemoteAudio(id, remoteStream));
+        call.on('close', ()=> detachRemoteAudio(id));
+        call.on('error', ()=> detachRemoteAudio(id));
+      }catch(_){ }
+    }
+
+    function attachRemoteAudio(id, remoteStream){
+      try{
+        let el = MP.audioEls.get(id);
+        if (!el){
+          el = document.createElement('audio');
+          el.autoplay = true; el.playsInline = true; el.style.display='none';
+          document.body.appendChild(el);
+          MP.audioEls.set(id, el);
+        }
+        el.srcObject = remoteStream;
+        const p = el.play(); if (p && p.catch) p.catch(()=>{});
+      }catch(_){ }
+    }
+
+    function detachRemoteAudio(id){
+      try{
+        const el = MP.audioEls.get(id);
+        if (el){ el.srcObject = null; el.remove(); MP.audioEls.delete(id); }
+      }catch(_){ }
+    }
+
+    function setMuted(m){
+      MP.muted = !!m;
+      try{
+        if (MP.localStream){
+          MP.localStream.getAudioTracks().forEach(t=> t.enabled = !MP.muted);
+        }
+        const btn = document.getElementById('mpToggleMute');
+        const label = document.getElementById('mpVoiceStatus');
+        if (btn) btn.textContent = MP.muted ? 'Unmute' : 'Mute';
+        if (label) label.textContent = 'Mic: ' + (MP.muted ? 'Muted' : 'On');
+      }catch(_){ }
+    }
+
+    // UI wiring
+    (function initMultiplayerUI(){
+      const openBtn = document.getElementById('mpOpen');
+      const closeBtn = document.getElementById('mpClose');
+      const hostBtn = document.getElementById('mpStartHost');
+      const joinBtn = document.getElementById('mpJoin');
+      const micBtn = document.getElementById('mpEnableMic');
+      const muteBtn = document.getElementById('mpToggleMute');
+      const o = document.getElementById('mpOverlay');
+      openBtn?.addEventListener('click', ()=>{ o.style.display='block'; });
+      closeBtn?.addEventListener('click', ()=>{ o.style.display='none'; });
+      hostBtn?.addEventListener('click', ()=>{
+        const id = (document.getElementById('mpMyId').value||'player_'+Math.floor(Math.random()*9999)).trim();
+        startHosting(id);
+      });
+      joinBtn?.addEventListener('click', ()=>{
+        const myId = (document.getElementById('mpMyId').value||'player_'+Math.floor(Math.random()*9999)).trim();
+        const hostId = (document.getElementById('mpHostId').value||'').trim();
+        if (!hostId) { mpLog('Enter a host ID'); return; }
+        joinHost(myId, hostId);
+      });
+      micBtn?.addEventListener('click', async ()=>{ await enableMic(); setMuted(false); });
+      muteBtn?.addEventListener('click', ()=> setMuted(!MP.muted));
+    })();
+
+    // Broadcast state at ~10 Hz
+    setInterval(()=>{
+      if (!MP.peer || (MP.conns.size===0)) return;
+      try{
+        const p = playerBody.position; const v = playerBody.velocity; const q = camera.quaternion;
+        broadcast({ t:'state', px:p.x, py:p.y, pz:p.z, vx:v.x, vy:v.y, vz:v.z, qx:q.x, qy:q.y, qz:q.z, qw:q.w, ts: performance.now() });
+      }catch(_){ }
+    }, 100);
+
+    // ================= Water Block (preview) =================
+    // Minimal visual + physics placeholder for future low-res fluid sim
+    function spawnWaterBlock(x, y, z, size=1){
+      try{
+        const geo = new THREE.BoxGeometry(size, size, size);
+        const mat = new THREE.MeshPhysicalMaterial({ color: 0x3aa7ff, transparent:true, opacity:0.55, roughness:0.2, metalness:0.0, transmission:0.6, thickness:0.4 });
+        const mesh = new THREE.Mesh(geo, mat); mesh.position.set(x*BLOCK_SIZE, y*BLOCK_SIZE, z*BLOCK_SIZE);
+        mesh.castShadow=false; mesh.receiveShadow=true;
+        scene.add(mesh);
+        const shape = new CANNON.Box(new CANNON.Vec3((size*BLOCK_SIZE)/2, (size*BLOCK_SIZE)/2, (size*BLOCK_SIZE)/2));
+        const body = new CANNON.Body({ mass: 0, material: groundMaterial });
+        body.addShape(shape); body.position.set(mesh.position.x, mesh.position.y, mesh.position.z);
+        world.addBody(body);
+        objects.push({ mesh, body, type:'water' });
+        return { mesh, body };
+      }catch(e){ console.warn('spawnWaterBlock failed', e); }
+      return null;
+    }
+
+      // subtle ambient motes around player
+      try{
+        animate.__ambientT = (animate.__ambientT||0) + delta;
+        if (VFX.enabled && animate.__ambientT > 1.4){
+          animate.__ambientT = 0;
+          const base = new THREE.Vector3(playerBody.position.x, playerBody.position.y + 1.2, playerBody.position.z);
+          emitBurst({ origin: base, count: 6, spread: 0.6, upBias: 0.4, speed: 0.6, gravity: 1.5, life: 1.6, color: 0x99ccff, size: 0.035, blend: 'normal' });
+        }
+      }catch(_){ }
+      // head bobbing while moving
+      try{
+        const v = playerBody.velocity; const horiz = Math.sqrt(v.x*v.x+v.z*v.z);
+        animate.__bobT = (animate.__bobT||0) + (horiz>0.4 ? delta * (8 + Math.min(6, horiz*0.8)) : 0);
+        const targetBob = (horiz>0.4 ? Math.sin(animate.__bobT) * 0.03 : 0);
+        const obj = controls.getObject();
+        animate.__lastBob = animate.__lastBob || 0;
+        const dBob = targetBob - animate.__lastBob;
+        if (dBob) { obj.position.y += dBob; animate.__lastBob = targetBob; }
+      }catch(_){ }
       
       performanceSlider.addEventListener('input', (e) => {
         const value = e.target.value;
@@ -589,16 +889,19 @@
           renderer.shadowMap.enabled = false;
           renderer.antialias = false;
           performanceValue.textContent = 'Low';
+          if (typeof VFX !== 'undefined'){ VFX.density = 0.5; }
           break;
         case 1: // Balanced (default)
           renderer.shadowMap.enabled = true;
           renderer.antialias = false;
           performanceValue.textContent = 'Balanced';
+          if (typeof VFX !== 'undefined'){ VFX.density = 0.8; }
           break;
         case 2: // High
           renderer.shadowMap.enabled = true;
           renderer.antialias = true;
           performanceValue.textContent = 'High';
+          if (typeof VFX !== 'undefined'){ VFX.density = 1.0; }
           break;
       }
       renderer.shadowMap.needsUpdate = true;
@@ -803,15 +1106,23 @@
       }
     );
     const camera = new THREE.PerspectiveCamera(75, window.innerWidth/window.innerHeight, 0.1, 1000);
-    const pixelScale = 0.25;
-    const renderer = new THREE.WebGLRenderer({ antialias: false });
-    renderer.setSize(window.innerWidth * pixelScale, window.innerHeight * pixelScale);
+    let renderScale = 0.5; // adaptive render scale (0.3 - 1.0)
+    const renderer = new THREE.WebGLRenderer({ antialias: false, powerPreference: 'high-performance' });
+    function applyRenderScale(){
+      const w = Math.max(200, Math.floor(window.innerWidth * renderScale));
+      const h = Math.max(150, Math.floor(window.innerHeight * renderScale));
+      renderer.setSize(w, h);
+      renderer.domElement.style.width = window.innerWidth + 'px';
+      renderer.domElement.style.height = window.innerHeight + 'px';
+    }
+    applyRenderScale();
     renderer.domElement.style.width = window.innerWidth + "px";
     renderer.domElement.style.height = window.innerHeight + "px";
     renderer.domElement.style.display = "block";
     renderer.shadowMap.enabled = true;
     renderer.shadowMap.type = THREE.PCFSoftShadowMap;
     document.body.appendChild(renderer.domElement);
+    window.addEventListener('resize', applyRenderScale);
 
     // --- Player Shadow (projected circle) ---
     const shadowGeometry = new THREE.CircleGeometry(0.7, 32);
@@ -820,6 +1131,33 @@
     playerShadow.rotation.x = -Math.PI / 2;
     playerShadow.position.y = 0.01; // Will be updated dynamically
     scene.add(playerShadow);
+
+    // ---- Camera Shake + Screen Flash Utilities ----
+    let shakeT = 0, shakeAmp = 0;
+    function triggerShake(strength=0.4, duration=300){
+      shakeAmp = Math.max(shakeAmp, strength);
+      shakeT = Math.max(shakeT, duration/1000);
+    }
+    function screenFlash(color='#ffffff', durationMs=160, maxOpacity=0.6){
+      const el = document.getElementById('fxFlash');
+      if (!el) return;
+      el.style.background = color;
+      el.style.opacity = String(maxOpacity);
+      setTimeout(()=>{ el.style.opacity = '0'; }, Math.max(30, durationMs));
+    }
+
+    // ---- Adaptive Resolution to hit target FPS ----
+    setInterval(()=>{
+      if (!Number.isFinite(fps) || !fps) return;
+      const target = Number.isFinite(targetFps) ? targetFps : 60;
+      if (fps < target - 5) {
+        renderScale = Math.max(0.3, renderScale - 0.05);
+        applyRenderScale();
+      } else if (fps > target + 5) {
+        renderScale = Math.min(1.0, renderScale + 0.05);
+        applyRenderScale();
+      }
+    }, 1200);
 
     // --- Pointer Lock Controls ---
     let controls = new THREE.PointerLockControls(camera, renderer.domElement);
@@ -882,6 +1220,156 @@
     );
     world.addContactMaterial(sphereGroundContactMat);
 
+    // ---- Lightweight GPU Particle System (pooled Points) ----
+    const VFX = {
+      enabled: true,
+      density: 1.0, // 0..1
+      systems: [],
+      pool: [],
+      maxPool: 32,
+      sprite: null
+    };
+
+    // Generate a soft round sprite for points
+    (function buildVFKSprites(){
+      const c = document.createElement('canvas'); c.width = c.height = 64;
+      const ctx = c.getContext('2d');
+      const g = ctx.createRadialGradient(32,32,4, 32,32,30);
+      g.addColorStop(0,'rgba(255,255,255,1)');
+      g.addColorStop(0.3,'rgba(255,255,255,0.8)');
+      g.addColorStop(1,'rgba(255,255,255,0)');
+      ctx.fillStyle = g; ctx.fillRect(0,0,64,64);
+      VFX.sprite = new THREE.CanvasTexture(c);
+      VFX.sprite.minFilter = THREE.LinearFilter;
+      VFX.sprite.magFilter = THREE.LinearFilter;
+      VFX.sprite.needsUpdate = true;
+    })();
+
+    function createPointSystem(count, color=0xffffff, size=0.08, blending=THREE.NormalBlending){
+      const geo = new THREE.BufferGeometry();
+      const positions = new Float32Array(count*3);
+      const velocities = new Float32Array(count*3);
+      const life = new Float32Array(count);
+      geo.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+      geo.setAttribute('velocity', new THREE.BufferAttribute(velocities, 3));
+      geo.setAttribute('life', new THREE.BufferAttribute(life, 1));
+      const mat = new THREE.PointsMaterial({ color, size, transparent: true, opacity: 1.0, depthWrite: false, sizeAttenuation: true, blending, map: VFX.sprite, alphaTest: 0.01 });
+      const pts = new THREE.Points(geo, mat);
+      pts.frustumCulled = false;
+      pts.visible = true;
+      return pts;
+    }
+
+    function acquireSystem(){
+      return VFX.pool.pop() || createPointSystem(256);
+    }
+    function releaseSystem(ps){
+      if (VFX.pool.length < VFX.maxPool){ VFX.pool.push(ps); }
+      else { try{ ps.geometry.dispose(); ps.material.dispose(); }catch(e){} }
+    }
+
+    function emitBurst({origin, count=120, spread=1.0, upBias=0.0, speed=4.0, gravity=9.82, life=1.2, color=0xffffff, size=0.06, blend='normal'}){
+      if (!VFX.enabled) return;
+      count = Math.floor(count * VFX.density);
+      if (count <= 0) return;
+      const blending = blend === 'add' ? THREE.AdditiveBlending : THREE.NormalBlending;
+      const ps = acquireSystem();
+      // ensure material parameters
+      ps.material.color.setHex(color);
+      ps.material.size = size;
+      ps.material.blending = blending;
+      const geo = ps.geometry;
+      const pos = geo.getAttribute('position');
+      const vel = geo.getAttribute('velocity');
+      const lif = geo.getAttribute('life');
+      const n = Math.min(count, pos.count);
+      for (let i=0;i<n;i++){
+        const j = i*3;
+        pos.array[j]   = origin.x + (Math.random()*2-1)*0.15*spread;
+        pos.array[j+1] = origin.y + (Math.random()*2-1)*0.1*spread;
+        pos.array[j+2] = origin.z + (Math.random()*2-1)*0.15*spread;
+        const vx = (Math.random()*2-1) * speed;
+        const vy = (Math.random()*0.5 + upBias) * speed;
+        const vz = (Math.random()*2-1) * speed;
+        vel.array[j] = vx; vel.array[j+1] = vy; vel.array[j+2] = vz;
+        lif.array[i] = life * (0.7 + Math.random()*0.6);
+      }
+      // mark rest as dead
+      for (let i=n;i<pos.count;i++){ lif.array[i] = 0; }
+      pos.needsUpdate = true; vel.needsUpdate = true; lif.needsUpdate = true;
+      ps.userData = { gravity, alive:true };
+      ps.position.set(0,0,0);
+      scene.add(ps);
+      VFX.systems.push(ps);
+      return ps;
+    }
+
+    function updateVFX(dt){
+      for (let i=VFX.systems.length-1;i>=0;i--){
+        const ps = VFX.systems[i];
+        const pos = ps.geometry.getAttribute('position');
+        const vel = ps.geometry.getAttribute('velocity');
+        const lif = ps.geometry.getAttribute('life');
+        let alive = false;
+        for (let p=0;p<pos.count;p++){
+          let t = lif.array[p];
+          if (t<=0) continue;
+          alive = true;
+          t -= dt; lif.array[p] = t;
+          const j = p*3;
+          const gx = 0, gy = -ps.userData.gravity*dt, gz = 0;
+          vel.array[j]   *= 0.985; vel.array[j+1] = (vel.array[j+1]+gy)*0.985; vel.array[j+2] *= 0.985;
+          pos.array[j]   += vel.array[j]*dt;
+          pos.array[j+1] += vel.array[j+1]*dt;
+          pos.array[j+2] += vel.array[j+2]*dt;
+        }
+        pos.needsUpdate = true; vel.needsUpdate = true; lif.needsUpdate = true;
+        if (ps.material){ ps.material.opacity = Math.max(0, Math.min(1, 0.9*Math.max(0.0, lif.array[0]))); }
+        if (!alive){
+          try{ scene.remove(ps); }catch(e){}
+          VFX.systems.splice(i,1);
+          releaseSystem(ps);
+        }
+      }
+    }
+
+    function emitDustAt(vec3, strength){
+      emitBurst({ origin: vec3, count: 80 + strength*40, spread: 1.2, upBias: 0.6, speed: 2.8 + strength*1.2, gravity: 10.2, life: 1.1, color: 0x8b5a3c, size: 0.12, blend: 'normal' });
+    }
+    function emitSparksAt(vec3, strength){
+      emitBurst({ origin: vec3, count: 60 + strength*60, spread: 0.8, upBias: 0.2, speed: 5.5 + strength*2.0, gravity: 9.82, life: 0.9, color: 0xffaa55, size: 0.06, blend: 'add' });
+    }
+
+    // Shockwave ring helper (expands outward in XZ)
+    function emitShockwaveRing(center){
+      const count = 160;
+      const ps = acquireSystem();
+      const pos = ps.geometry.getAttribute('position');
+      const vel = ps.geometry.getAttribute('velocity');
+      const lif = ps.geometry.getAttribute('life');
+      const n = Math.min(count, pos.count);
+      for (let i=0;i<n;i++){
+        const a = (i/n) * Math.PI*2;
+        const dirx = Math.cos(a), dirz = Math.sin(a);
+        const j=i*3;
+        pos.array[j] = center.x + dirx*0.2;
+        pos.array[j+1] = center.y + 0.1;
+        pos.array[j+2] = center.z + dirz*0.2;
+        vel.array[j] = dirx * 6.5;
+        vel.array[j+1] = 1.0;
+        vel.array[j+2] = dirz * 6.5;
+        lif.array[i] = 0.8;
+      }
+      for (let i=n;i<pos.count;i++){ lif.array[i]=0; }
+      pos.needsUpdate = vel.needsUpdate = lif.needsUpdate = true;
+      ps.material.color.setHex(0x99ccff);
+      ps.material.size = 0.05;
+      ps.material.blending = THREE.AdditiveBlending;
+      ps.userData = { gravity: 2.0 };
+      ps.position.set(0,0,0);
+      scene.add(ps); VFX.systems.push(ps);
+    }
+
     // --- Create Grass Ground ---
     // --- Create a realistic grass texture ---
     const grassTexture = new THREE.TextureLoader().load(
@@ -943,6 +1431,10 @@
 
     // --- Jump flag (set via collision event) ---
     let canJumpFlag = false;
+    // --- Smash move (Shift) state ---
+    let smashArmed = false;
+    let lastSmashTime = 0;
+    const smashCooldownMs = 900;
     playerBody.addEventListener("collide", function(e) {
       const contact = e.contact;
       // Determine which way the contact normal is facing
@@ -956,6 +1448,50 @@
       // If the contact normal is mostly upward, allow jumping.
       if (contactNormal.dot(new CANNON.Vec3(0, 1, 0)) > 0.5) {
         canJumpFlag = true;
+        // ground impact VFX based on current speed
+        try{
+          const v = playerBody.velocity; const speed = Math.sqrt(v.x*v.x+v.y*v.y+v.z*v.z);
+          if (VFX.enabled && speed>2.0){
+            const p = new THREE.Vector3(playerBody.position.x, playerBody.position.y-0.4, playerBody.position.z);
+            emitDustAt(p, Math.min(3, speed*0.3));
+            if (speed>6) emitSparksAt(p, Math.min(3, (speed-6)*0.2));
+          }
+          // impact shake
+          triggerShake(Math.min(0.7, 0.15 + speed*0.04), 240);
+        }catch(_){ }
+        // If smash is armed, trigger the smash explosion on ground
+        if (smashArmed){
+          smashArmed = false; lastSmashTime = performance.now();
+          const center = new CANNON.Vec3(playerBody.position.x, playerBody.position.y-0.2, playerBody.position.z);
+          const radius = 6.0; const strength = 360;
+          for (const o of objects){
+            if (!o.body || o.body.mass === 0) continue;
+            const to = o.body.position.vsub(center);
+            const dist = to.length();
+            if (dist>0 && dist < radius){
+              const n = to.scale(1/dist);
+              const impulseMag = strength * (1 - dist/radius);
+              const impulse = new CANNON.Vec3(n.x*impulseMag, (0.35+Math.random()*0.3)*impulseMag, n.z*impulseMag);
+              try{ o.body.applyImpulse(impulse, o.body.position); }catch(e){ try{ o.body.applyForce(impulse, o.body.position);}catch(_){}}
+            }
+          }
+          // VFX and camera
+          try{
+            const c3 = new THREE.Vector3(center.x, center.y, center.z);
+            emitDustAt(c3, 3);
+            emitSparksAt(c3, 2.2);
+            emitShockwaveRing(c3);
+            triggerShake(0.9, 420);
+            screenFlash('#ffffff', 160, 0.45);
+          }catch(_){ }
+          // rebound boost
+          playerBody.velocity.y = Math.max(playerBody.velocity.y, 14);
+          // quick fov kick
+          try{
+            const prev = camera.fov; camera.fov = Math.max(60, prev-6); camera.updateProjectionMatrix();
+            setTimeout(()=>{ camera.fov = prev; camera.updateProjectionMatrix(); }, 280);
+          }catch(_){ }
+        }
       }
     });
 
@@ -1035,7 +1571,7 @@
           const horizontalDist = Math.sqrt(dx*dx + dz*dz);
           if (horizontalDist < 1 && playerBody.position.y >= obj.mesh.position.y + (BLOCK_SIZE/2) - 0.2) {
             playerBody.velocity.y = 15;
-            showDebugMessage("Boost activated!");
+            showDebugMessage("");
             playSound('boostSound');
           }
         }
@@ -1131,7 +1667,7 @@
           if (horizontalDist < 1 && playerBody.position.y >= obj.mesh.position.y + (BLOCK_SIZE/2) - 0.2) {
             obj.activated = true;
             obj.mesh.material.color.set(0x8B4513);
-            showDebugMessage("Sand block activated!");
+            showDebugMessage("");
             
             // Check for adjacent ice blocks and start the reaction
             const sandPos = obj.mesh.position;
@@ -1341,7 +1877,7 @@
       playerBody.position.set(0, 2, 0);
       playerBody.velocity.set(0, 0, 0);
       checkpointPosition = null;
-      showDebugMessage(`Level ${idx+1} loaded!`);
+      showDebugMessage(`Level Start`);
       showLevelStartText();
     }
     function markLevelComplete(idx) {
@@ -1709,6 +2245,19 @@
             setTimeout(() => {
               stickyBlocksTemporarilyDisabled = false;
             }, 500); // Re-enable after 0.5 seconds
+        }
+      }
+      // Smash move on Shift (zoom down, explode on ground)
+      if (e.code === 'ShiftLeft' || e.code === 'ShiftRight' || e.key === 'Shift'){
+        const now = performance.now();
+        if (now - lastSmashTime > smashCooldownMs && !smashArmed){
+          smashArmed = true;
+          // accelerate downward and slight forward
+          const dir = camera.getWorldDirection(new THREE.Vector3());
+          playerBody.velocity.x += dir.x * 2.0;
+          playerBody.velocity.z += dir.z * 2.0;
+          playerBody.velocity.y = Math.min(playerBody.velocity.y, -14);
+          try{ triggerShake(0.45, 220); }catch(_){ }
         }
       }
       if (e.key === 'r' || e.key === 'R') {
@@ -2251,13 +2800,26 @@
       }
       prevPlayerPos.copy(playerPos);
     }
-
     // --- ANIMATION LOOP ---
     const clock = new THREE.Clock();
     function animate() {
       const delta = clock.getDelta();
       updatePlayer(delta);
       world.step(1/60, delta, 12);
+      // lightweight player motion trails
+      try{
+        if (VFX.enabled){
+          const v = playerBody.velocity; const sp = Math.sqrt(v.x*v.x+v.y*v.y+v.z*v.z);
+          animate.__lastTrailT = animate.__lastTrailT || 0;
+          animate.__accumT = (animate.__accumT||0) + delta;
+          const interval = sp > 6 ? 0.06 : 0.12;
+          if (sp > 3 && animate.__accumT > interval){
+            animate.__accumT = 0;
+            const pos = new THREE.Vector3(playerBody.position.x, playerBody.position.y+0.1, playerBody.position.z);
+            emitBurst({ origin: pos, count: 18, spread: 0.3, upBias: 0.05, speed: Math.min(6, sp*0.3), gravity: 6.5, life: 0.35, color: 0x66d6ff, size: 0.05, blend: 'add' });
+          }
+        }
+      }catch(_){ }
       objects.forEach(obj => {
         obj.mesh.position.copy(obj.body.position);
         obj.mesh.quaternion.copy(obj.body.quaternion);
@@ -2569,6 +3131,429 @@
       setTimeout(() => { if (muzzleFlashMesh) muzzleFlashMesh.visible = false; }, 80);
     }
 
+    // --- VR Mode Setup ---
+    let vrMode = false;
+    let vrRenderer, vrScene, vrCamera, vrController;
+    let animationId; // To store the main game animation frame ID
+    
+    // Get the VR menu button
+    const vrButton = document.getElementById('vrMenuButton');
+    if (!vrButton) {
+      console.error('VR menu button not found!');
+    }
+    
+    // VR Container
+    const vrContainer = document.createElement('div');
+    vrContainer.id = 'vr-container';
+    vrContainer.style.position = 'fixed';
+    vrContainer.style.top = '0';
+    vrContainer.style.left = '0';
+    vrContainer.style.width = '100%';
+    vrContainer.style.height = '100%';
+    vrContainer.style.background = '#000';
+    vrContainer.style.display = 'none';
+    document.body.appendChild(vrContainer);
+    
+    // VR Loading Indicator
+    const vrLoading = document.createElement('div');
+    vrLoading.id = 'vr-loading';
+    vrLoading.style.position = 'absolute';
+    vrLoading.style.top = '50%';
+    vrLoading.style.left = '50%';
+    vrLoading.style.transform = 'translate(-50%, -50%)';
+    vrLoading.style.color = 'white';
+    vrLoading.style.textAlign = 'center';
+    vrLoading.innerHTML = '<p>Loading VR Mode...</p><p id="vr-status">Initializing VR</p>';
+    vrContainer.appendChild(vrLoading);
+    
+    // Check for VR support and update button state
+    function checkVRSupport() {
+      if ('xr' in navigator) {
+        navigator.xr.isSessionSupported('immersive-vr').then((supported) => {
+          if (supported) {
+            vrButton.style.display = 'inline-block';
+            vrButton.disabled = false;
+            vrButton.title = 'Enter VR Mode';
+            vrButton.addEventListener('click', initVR);
+          } else {
+            vrButton.disabled = true;
+            vrButton.title = 'VR not supported in this browser';
+          }
+        }).catch(err => {
+          console.error('VR support check failed:', err);
+          vrButton.disabled = true;
+          vrButton.title = 'VR support check failed';
+        });
+      } else {
+        vrButton.disabled = true;
+        vrButton.title = 'WebXR not supported in this browser';
+      }
+    }
+    
+    // Check VR support when the page loads
+    window.addEventListener('load', checkVRSupport);
+    
+    // Initialize VR Mode
+    async function initVR() {
+      try {
+        // Show loading
+        vrContainer.style.display = 'block';
+        document.getElementById('vr-status').textContent = 'Initializing WebXR...';
+        vrButton.disabled = true;
+        vrButton.textContent = 'Starting VR...';
+        
+        // Initialize Three.js renderer for VR
+        vrRenderer = new THREE.WebGLRenderer({ antialias: true });
+        vrRenderer.setPixelRatio(window.devicePixelRatio);
+        vrRenderer.setSize(window.innerWidth, window.innerHeight);
+        vrRenderer.xr.enabled = true;
+        vrContainer.appendChild(vrRenderer.domElement);
+        
+        // Create a new scene for VR with menu background
+        vrScene = scene.clone(); // Start with a clone of the current scene
+        vrScene.background = new THREE.Color(0x000000); // Black background
+        
+        // Load level 2 when entering VR
+        currentLevel = 2;
+        loadLevel(currentLevel);
+        
+        // Setup camera
+        vrCamera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+        vrCamera.position.set(0, 1.6, 0); // Eye level height
+        
+        // Add lights
+        const light = new THREE.HemisphereLight(0xffffff, 0x444444);
+        light.position.set(0, 1, 0);
+        vrScene.add(light);
+        
+        // Add menu elements to VR scene
+        const menuGroup = new THREE.Group();
+        
+        // Create menu panel
+        const menuGeometry = new THREE.PlaneGeometry(8, 6);
+        const menuMaterial = new THREE.MeshBasicMaterial({ 
+          color: 0x111111,
+          transparent: true,
+          opacity: 0.8,
+          side: THREE.DoubleSide
+        });
+        const menuPanel = new THREE.Mesh(menuGeometry, menuMaterial);
+        menuPanel.position.z = -3;
+        menuPanel.position.y = 1.4;
+        menuGroup.add(menuPanel);
+        
+        // Add menu title
+        const titleGeometry = new THREE.PlaneGeometry(7, 0.8);
+        const titleMaterial = new THREE.MeshBasicMaterial({ 
+          color: 0x4a00e0,
+          transparent: true,
+          opacity: 0.9,
+          side: THREE.DoubleSide
+        });
+        const titlePanel = new THREE.Mesh(titleGeometry, titleMaterial);
+        titlePanel.position.y = 2.5;
+        titlePanel.position.z = -3;
+        menuGroup.add(titlePanel);
+        
+        // Add menu items
+        const menuItems = [
+          { text: 'Start Game', action: startGame },
+          { text: 'Load Custom Level', action: showCustomLevelInput },
+          { text: 'Level Hub', action: showLevelHub },
+          { text: 'Stock Market', action: showStockMarket },
+          { text: 'Shop', action: showShop }
+        ];
+        
+        menuItems.forEach((item, index) => {
+          const itemGeometry = new THREE.PlaneGeometry(6, 0.6);
+          const itemMaterial = new THREE.MeshBasicMaterial({ 
+            color: 0x333333,
+            transparent: true,
+            opacity: 0.8,
+            side: THREE.DoubleSide
+          });
+          
+          const menuItem = new THREE.Mesh(itemGeometry, itemMaterial);
+          menuItem.position.y = 1.5 - (index * 0.7);
+          menuItem.position.z = -3;
+          menuItem.userData = { action: item.action };
+          menuGroup.add(menuItem);
+          
+          // Add text to menu item
+          const loader = new THREE.TextureLoader();
+          const textCanvas = document.createElement('canvas');
+          const context = textCanvas.getContext('2d');
+          textCanvas.width = 512;
+          textCanvas.height = 128;
+          context.fillStyle = '#ffffff';
+          context.font = 'Bold 48px Arial';
+          context.fillText(item.text, 10, 80);
+          
+          const textTexture = new THREE.CanvasTexture(textCanvas);
+          const textMaterial = new THREE.MeshBasicMaterial({ 
+            map: textTexture,
+            transparent: true,
+            side: THREE.DoubleSide
+          });
+          
+          const textGeometry = new THREE.PlaneGeometry(5, 0.5);
+          const textMesh = new THREE.Mesh(textGeometry, textMaterial);
+          textMesh.position.set(0, 0, 0.1);
+          menuItem.add(textMesh);
+        });
+        
+        vrScene.add(menuGroup);
+        
+        // Setup controller
+        vrController = vrRenderer.xr.getController(0);
+        vrController.addEventListener('selectstart', onSelectStart);
+        vrController.addEventListener('squeezestart', onSqueezeStart);
+        vrController.addEventListener('squeezeend', onSqueezeEnd);
+        vrScene.add(vrController);
+        
+        // Add controller model if available
+        if (THREE.XRControllerModelFactory) {
+          const controllerModelFactory = new THREE.XRControllerModelFactory();
+          const controllerGrip = vrRenderer.xr.getControllerGrip(0);
+          controllerGrip.add(controllerModelFactory.createControllerModel(controllerGrip));
+          vrScene.add(controllerGrip);
+        }
+        
+        // Set up game state for VR
+        isInMenu = true;
+        
+        // Start VR session
+        document.getElementById('vr-status').textContent = 'Starting VR session...';
+        await vrRenderer.xr.setSession(await navigator.xr.requestSession('immersive-vr', {
+          optionalFeatures: ['local-floor', 'hand-tracking']
+        }));
+        
+        // Hide loading, show VR
+        vrLoading.style.display = 'none';
+        
+        // Hide other UI
+        document.querySelectorAll('body > *:not(#vr-container)').forEach(el => {
+          if (el.tagName !== 'SCRIPT') el.style.display = 'none';
+        });
+        
+        // Pause the main game loop
+        if (animationId) {
+          cancelAnimationFrame(animationId);
+        }
+        
+        // Start VR animation loop
+        vrRenderer.setAnimationLoop(animateVR);
+        
+        vrMode = true;
+        vrButton.textContent = 'Exit VR';
+        vrButton.removeEventListener('click', initVR);
+        vrButton.addEventListener('click', exitVR);
+        
+      } catch (error) {
+        console.error('VR Error:', error);
+        document.getElementById('vr-status').textContent = `VR Error: ${error.message}`;
+      }
+    }
+    
+    // Handle controller trigger press (jump)
+    function onSelectStart() {
+      if (!vrMode) return;
+      
+      if (!isInMenu) {
+        // In-game: Jump
+        if (canJump && playerBody) {
+          playerBody.velocity.y = 10;
+          canJump = false;
+          playSound('jumpSound');
+          
+          // Check for double jump
+          if (hasDoubleJump) {
+            setTimeout(() => {
+              if (!canJump) { // If still in air after initial jump
+                hasDoubleJump = false;
+                playerBody.velocity.y = 12; // Slightly higher than first jump
+                playSound('jumpSound');
+              }
+            }, 200);
+          }
+        }
+        return;
+      }
+      
+      // In menu: Handle menu selection
+      const raycaster = new THREE.Raycaster();
+      raycaster.setFromCamera({ x: 0, y: 0 }, vrController);
+      
+      const intersects = raycaster.intersectObjects(vrScene.children, true);
+      
+      for (let i = 0; i < intersects.length; i++) {
+        const obj = intersects[i].object.parent; // Get the parent menu item
+        if (obj.userData && obj.userData.action) {
+          // Animate button press
+          obj.scale.set(0.95, 0.95, 0.95);
+          setTimeout(() => { obj.scale.set(1, 1, 1); }, 100);
+          
+          // Execute the action
+          obj.userData.action();
+          break;
+        }
+      }
+    }
+    
+    // Handle grip button (shift/sprint)
+    function onSqueezeStart() {
+      if (!vrMode || isInMenu) return;
+      isSprinting = true;
+      moveSpeed = 0.2; // Sprint speed
+    }
+    
+    function onSqueezeEnd() {
+      if (!vrMode || isInMenu) return;
+      isSprinting = false;
+      moveSpeed = 0.1; // Normal speed
+    }
+    
+    function animateVR() {
+      if (!vrMode) return;
+      
+      // Get VR frame data
+      const session = vrRenderer.xr.getSession();
+      if (!session) return;
+      
+      // Get reference space for movement
+      const referenceSpace = renderer.xr.getReferenceSpace();
+      
+      // Get controller input for movement
+      const gamepads = navigator.getGamepads();
+      const leftController = gamepads[0]; // Left controller
+      
+      if (leftController && !isInMenu && playerBody) {
+        // Get movement from left thumbstick (axes 2 and 3 for left controller)
+        const xAxis = leftController.axes[2] || 0;
+        const zAxis = leftController.axes[3] || 0;
+        
+        // Only move if thumbstick is pushed significantly
+        if (Math.abs(xAxis) > 0.1 || Math.abs(zAxis) > 0.1) {
+          // Get camera forward and right vectors
+          const forward = new THREE.Vector3(0, 0, -1);
+          const right = new THREE.Vector3(1, 0, 0);
+          
+          // Apply camera rotation to movement vectors
+          forward.applyQuaternion(vrCamera.quaternion);
+          right.applyQuaternion(vrCamera.quaternion);
+          
+          // Flatten vectors to horizontal plane
+          forward.y = 0;
+          right.y = 0;
+          forward.normalize();
+          right.normalize();
+          
+          // Calculate movement direction based on input
+          const moveDirection = new THREE.Vector3();
+          moveDirection.add(forward.multiplyScalar(-zAxis)); // Forward/back
+          moveDirection.add(right.multiplyScalar(xAxis));    // Left/right
+          
+          // Normalize to prevent faster diagonal movement
+          if (moveDirection.length() > 0) {
+            moveDirection.normalize();
+          }
+          
+          // Apply movement speed
+          const speed = isSprinting ? 0.2 : 0.1;
+          moveDirection.multiplyScalar(speed);
+          
+          // Apply movement to player
+          playerBody.velocity.x = moveDirection.x * 50; // Scale up for physics
+          playerBody.velocity.z = moveDirection.z * 50;
+        } else {
+          // Apply damping when not moving
+          playerBody.velocity.x *= 0.9;
+          playerBody.velocity.z *= 0.9;
+        }
+        
+        // Update camera position to follow player
+        if (playerBody) {
+          // Keep camera at head height above player
+          const targetPos = playerBody.position.clone();
+          targetPos.y += 1.6; // Eye level height
+          vrCamera.position.lerp(targetPos, 0.1);
+        }
+      }
+      
+      // Update physics
+      const delta = clock.getDelta();
+      if (world) world.step(1/60, delta, 3);
+      
+      // Update objects
+      objects.forEach(obj => {
+        if (obj.mesh && obj.body) {
+          obj.mesh.position.copy(obj.body.position);
+          obj.mesh.quaternion.copy(obj.body.quaternion);
+        }
+        if (obj.update) obj.update();
+      });
+      
+      // Update VFX
+      updateVFX(delta);
+      
+      // Render the scene
+      vrRenderer.render(vrScene, vrCamera);
+    }
+    
+    // Handle window resize
+    window.addEventListener('resize', () => {
+      if (vrCamera) {
+        vrCamera.aspect = window.innerWidth / window.innerHeight;
+        vrCamera.updateProjectionMatrix();
+        vrRenderer.setSize(window.innerWidth, window.innerHeight);
+      }
+    });
+    
+    // Exit VR mode
+    async function exitVR() {
+      try {
+        if (vrRenderer && vrRenderer.xr && vrRenderer.xr.getSession()) {
+          await vrRenderer.xr.getSession().end();
+        }
+      } catch (err) {
+        console.error('Error exiting VR:', err);
+      }
+      
+      // Clean up VR
+      vrMode = false;
+      if (vrRenderer) {
+        vrRenderer.setAnimationLoop(null);
+      }
+      
+      // Hide VR container
+      if (vrContainer) {
+        vrContainer.style.display = 'none';
+      }
+      
+      // Show all UI elements
+      document.querySelectorAll('body > *').forEach(el => {
+        if (el.tagName !== 'SCRIPT') el.style.display = '';
+      });
+      
+      // Update button state
+      if (vrButton) {
+        vrButton.textContent = 'VR Mode';
+        vrButton.removeEventListener('click', exitVR);
+        vrButton.addEventListener('click', initVR);
+        vrButton.disabled = false;
+      }
+      
+      // Restart main game loop
+      animate();
+    }
+    
+    // Handle exiting VR through headset
+    window.addEventListener('vrdisplaypresentchange', (e) => {
+      if (!e.display.isPresenting) {
+        exitVR();
+      }
+    });
+
     // --- Web Audio API Setup for Music and Sound Effects ---
     let audioCtx = null;
     function getAudioCtx() {
@@ -2729,10 +3714,13 @@
     }
 
     // --- Show Level Start Text Above Player ---
-    function showLevelStartText() {
+    function showLevelStartText(levelName = 'Level Start') {
       const el = document.getElementById('levelStartText');
       el.style.display = 'block';
-      el.textContent = 'Level Start';
+      el.textContent = levelName;
+      el.style.animation = 'none';
+      el.offsetHeight; // Trigger reflow
+      el.style.animation = 'fadeInOut 2.2s ease-in-out';
       setTimeout(() => { el.style.display = 'none'; }, 2200);
     }
 
@@ -2762,10 +3750,34 @@
               );
               inventory.ammo--;
               updateInventoryDisplay();
-              showDebugMessage("Block shot!");
+              showDebugMessage("");
               playSound('shootSound');
               showMuzzleFlash();
               setTimeout(() => playSound('shootImpactSound'), 120);
+            } else {
+              showDebugMessage("No ammo!");
+            }
+          } else {
+            // No block targeted: if aiming at ground, give a small lift
+            if (inventory.ammo > 0) {
+              try{
+                const rc = new THREE.Raycaster();
+                rc.set(camera.position, camera.getWorldDirection(new THREE.Vector3()));
+                const hits = groundMesh ? rc.intersectObject(groundMesh, true) : [];
+                if (hits && hits.length){
+                  const h = hits[0];
+                  const dir = camera.getWorldDirection(new THREE.Vector3());
+                  const downDot = new THREE.Vector3(0,-1,0).dot(dir);
+                  if (downDot > 0.35){
+                    playerBody.velocity.y = Math.max(playerBody.velocity.y, 6.5);
+                    inventory.ammo--; updateInventoryDisplay();
+                    showDebugMessage('');
+                    playSound('boostSound');
+                    try{ triggerShake(0.35, 180); screenFlash('#ffffff', 120, 0.35); }catch(_){ }
+                    emitDustAt(new THREE.Vector3(h.point.x, h.point.y+0.1, h.point.z), 1.2);
+                  }
+                }
+              }catch(_){ }
             } else {
               showDebugMessage("No ammo!");
             }
@@ -2821,7 +3833,7 @@
       playerBody.position.set(0, 2, 0);
       playerBody.velocity.set(0, 0, 0);
       checkpointPosition = null;
-      showDebugMessage(`Level ${idx+1} loaded!`);
+      showDebugMessage(`Level Start`);
       showLevelStartText();
     }
     // Also show on custom level load
@@ -3169,11 +4181,33 @@
       }
     }
   </script>
-<audio id="backgroundMusic" loop src="https://www.soundhelix.com/examples/mp3/SoundHelix-Song-1.mp3" controls>
+<audio id="backgroundMusic" controls>
   Your browser does not support the audio element.
 </audio>
 <script>
   const audioPlayer = document.getElementById('backgroundMusic');
+  
+  // Playlist with both songs
+  const playlist = [
+    'https://www.soundhelix.com/examples/mp3/SoundHelix-Song-1.mp3',
+    'https://www.soundhelix.com/examples/mp3/SoundHelix-Song-4.mp3'
+  ];
+  let currentSongIndex = 0;
+  
+  // Function to play the next song in the playlist
+  function playNextSong() {
+    currentSongIndex = (currentSongIndex + 1) % playlist.length;
+    audioPlayer.src = playlist[currentSongIndex];
+    audioPlayer.play().catch(e => {
+      console.error("Error playing next song: " + e);
+    });
+  }
+  
+  // Set up event listener for when a song ends
+  audioPlayer.addEventListener('ended', playNextSong);
+  
+  // Start playing the first song
+  audioPlayer.src = playlist[0];
   audioPlayer.play().catch(e => {
     console.error("Autoplay failed. User interaction may be required. Error: " + e);
     // You might want to add a play button here for the user to click
@@ -3193,7 +4227,23 @@
     
     // Start animation loop
     animate();
+
+    // Wire settings to VFX
+    try {
+      const particlesChk = document.getElementById('toggleParticles');
+      if (particlesChk){
+        VFX.enabled = !!particlesChk.checked;
+        particlesChk.addEventListener('change', ()=>{ VFX.enabled = !!particlesChk.checked; });
+      }
+      const performanceSlider = document.getElementById('performanceSlider');
+      if (performanceSlider){ updatePerformance(parseInt(performanceSlider.value)); }
+    } catch(e){}
   });
+
+  // update particles after each physics step (approx dt)
+  try {
+    world.addEventListener('postStep', ()=> updateVFX(1/60));
+  } catch(e){}
 </script>
 </body>
 </html>
